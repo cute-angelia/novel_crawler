@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
+	"github.com/guonaihong/gout"
+	"github.com/spf13/viper"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 	"io"
@@ -12,6 +14,7 @@ import (
 	"net/http"
 	u "net/url"
 	"novel_crawler/consts"
+	"novel_crawler/pkg/goutclient"
 	"os"
 	"strings"
 	"time"
@@ -20,15 +23,53 @@ import (
 
 // Chapter 爬取流程相同的共用同一个实现类
 type Chapter struct {
-	Number  int
-	UrlStr  string
-	Title   string
-	Content string
+	Number                int
+	UrlStr                string
+	Title                 string
+	Content               string
+	ChapterTitleInContent bool
 }
 
 func (c *Chapter) Save(f *os.File) error {
-	_, err := f.WriteString(fmt.Sprintf("%s\n%s\n", c.Title, c.Content))
-	return err
+	if c.ChapterTitleInContent {
+		_, err := f.WriteString(fmt.Sprintf("%s\n", c.Content))
+		return err
+	} else {
+		_, err := f.WriteString(fmt.Sprintf("%s\n%s\n", c.Title, c.Content))
+		return err
+	}
+}
+
+// ExtractRange 从切片中提取指定范围的元素，自动处理超出边界情况
+func ExtractRange(ilist []Chapter, rangeSpec []int) []Chapter {
+	if len(rangeSpec) != 2 {
+		return []Chapter{}
+	}
+
+	start := rangeSpec[0]
+	end := rangeSpec[1]
+
+	// 处理起始位置超出边界的情况
+	if start < 0 {
+		start = 0
+	}
+	if start > len(ilist) {
+		start = len(ilist)
+	}
+
+	// 处理结束位置超出边界的情况
+	if end < start {
+		end = start
+	}
+	if end > len(ilist) || end == 0 || end == -1 {
+		end = len(ilist)
+	}
+
+	// 使用copy函数确保顺序一致且避免共享底层数组
+	result := make([]Chapter, end-start)
+	copy(result, ilist[start:end])
+
+	return result
 }
 
 type ChapterFilter interface {
@@ -49,7 +90,7 @@ type CrawlerInterface interface {
 }
 
 var client = &http.Client{
-	Timeout: time.Second * 15,
+	Timeout: time.Second * 5,
 }
 
 // Glc goroutine limit channel 限制并发量
@@ -59,7 +100,6 @@ var Gap = new(time.Duration)
 
 // CreateGoQuery 所有的http请求都通过这里发送
 func CreateGoQuery(urlStr string) (*goquery.Document, error) {
-
 	// 并发限制
 	*Glc <- 1
 	defer func() {
@@ -69,28 +109,19 @@ func CreateGoQuery(urlStr string) (*goquery.Document, error) {
 		_ = <-*Glc
 	}()
 
-	req, _ := http.NewRequest("GET", urlStr, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "+
-		"(KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36 Edg/117.0.2045.60")
-
-	resp, err := client.Do(req)
+	var resp string
+	err := goutclient.GetClient().GET(urlStr).SetHeader(gout.H{
+		"User-Agent": viper.GetString("common.useragent2"),
+	}).BindBody(&resp).Do()
 	if err != nil {
 		return nil, err
 	}
-	// 别忘了释放链接
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			log.Println("Error: " + err.Error())
-		}
-	}(resp.Body)
-	if err != nil {
+	if dom, err := goquery.NewDocumentFromReader(strings.NewReader(resp)); err != nil {
+		log.Println("goquery.new", err)
 		return nil, err
+	} else {
+		return dom, nil
 	}
-
-	dom, err := goquery.NewDocumentFromReader(resp.Body)
-	return dom, err
-
 }
 
 // CreateCrawler 暂时只生产两个类
@@ -106,7 +137,8 @@ func CreateCrawler(novelUrlStr string) (CrawlerInterface, error) {
 			filter:   &chapterFilterCommon{},
 		}, nil
 	}
-	if _, ok := consts.NewBiQuGeInfoByHost[novelUrl.Hostname()]; ok {
+
+	if _, ok := consts.NewSiteInfoConfigMap[novelUrl.Hostname()]; ok {
 		return &NewBiQuGeCrawler{
 			novelUrl:   novelUrl,
 			nextGetter: &nextGetterCommon{},

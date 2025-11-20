@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// 下一页
 type nextGetterCommon struct {
 }
 

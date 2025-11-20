@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"novel_crawler/consts"
+	"novel_crawler/utils"
 	"strings"
 )
 
@@ -16,6 +17,7 @@ type NewBiQuGeCrawler struct {
 	nextGetter NextGetter
 }
 
+// 目录
 func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 	log.Println("该网站章节是分页展示的，需要更长的时间爬取，大概需要几十秒的时间......")
 
@@ -26,7 +28,7 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 	}
 
 	r := make([]Chapter, 0)
-	info := consts.NewBiQuGeInfoByHost[n.novelUrl.Hostname()]
+	info := consts.NewSiteInfoConfigMap[n.novelUrl.Hostname()]
 
 	for {
 		// 把当前页包含的章节存起来
@@ -39,8 +41,9 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 					if bts, err := GbkToUtf8([]byte(selection.Text())); err == nil {
 						// 把获取到的信息append到r里面
 						r = append(r, Chapter{
-							UrlStr: n.novelUrl.ResolveReference(pathUrl).String(),
-							Title:  string(bts),
+							UrlStr:                n.novelUrl.ResolveReference(pathUrl).String(),
+							Title:                 string(bts),
+							ChapterTitleInContent: info.ChapterTitleInContent,
 						})
 					}
 				}
@@ -51,18 +54,25 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 		{
 
 			nextUrl, err := n.nextGetter.NextUrl(dom, info.ChapterListNextSelector, info.ChapterListNextStr)
-			if err != nil {
-				return nil, err
-			}
 			if nextUrl == nil {
 				break
 			}
-
-			dom, err = CreateGoQuery(n.novelUrl.ResolveReference(nextUrl).String())
+			if strings.Contains(nextUrl.String(), "javascript") {
+				break
+			}
+			//log.Println("下一页链接：", nextUrl)
 			if err != nil {
 				return nil, err
 			}
+			fullUri := n.novelUrl.ResolveReference(nextUrl).String()
 
+			if utils.IsDebug() {
+				log.Println("下一页链接 -> ", fullUri)
+			}
+			dom, err = CreateGoQuery(fullUri)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 	}
@@ -72,6 +82,7 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 	return r, nil
 }
 
+// 章节内容
 func (n *NewBiQuGeCrawler) FetchChapterContent(c *Chapter) error {
 
 	// 发起http请求，获取网页内容并解析
@@ -80,7 +91,7 @@ func (n *NewBiQuGeCrawler) FetchChapterContent(c *Chapter) error {
 		return err
 	}
 
-	info := consts.NewBiQuGeInfoByHost[n.novelUrl.Hostname()]
+	info := consts.NewSiteInfoConfigMap[n.novelUrl.Hostname()]
 
 	for {
 		// 获取章节content
@@ -98,19 +109,24 @@ func (n *NewBiQuGeCrawler) FetchChapterContent(c *Chapter) error {
 		c.Content += ct
 
 		// 与“下一页”相关的操作
-		{
-			nextUrl, err := n.nextGetter.NextUrl(dom, info.ContentNextSelector, info.ContentNextStr)
-			if err != nil {
-				return err
-			}
-			if nextUrl == nil {
-				break
-			}
+		nextUrl, err := n.nextGetter.NextUrl(dom, info.ContentNextSelector, info.ContentNextStr)
 
-			dom, err = CreateGoQuery(n.novelUrl.ResolveReference(nextUrl).String())
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
+		}
+		if nextUrl == nil {
+			break
+		}
+
+		contentNextUri := n.novelUrl.ResolveReference(nextUrl).String()
+		t := c.Title
+
+		if utils.IsDebug() {
+			log.Println("抓取下一页（文章）", t, contentNextUri)
+		}
+		dom, err = CreateGoQuery(contentNextUri)
+		if err != nil {
+			return err
 		}
 	}
 
