@@ -6,7 +6,7 @@ import (
 	"log"
 	"net/url"
 	"novel_crawler/consts"
-	"novel_crawler/utils"
+	"novel_crawler/pkg/utils"
 	"strings"
 )
 
@@ -18,17 +18,20 @@ type NewBiQuGeCrawler struct {
 }
 
 // 目录
-func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
+func (n *NewBiQuGeCrawler) FetchChapterList() (bookName string, chapters []Chapter, err error) {
 	log.Println("该网站章节是分页展示的，需要更长的时间爬取，大概需要几十秒的时间......")
 
 	// 发起http请求，获取网页内容并解析
 	dom, err := CreateGoQuery(n.novelUrl.String())
 	if err != nil {
-		return nil, err
+		return bookName, chapters, err
 	}
 
-	r := make([]Chapter, 0)
 	info := consts.NewSiteInfoConfigMap[n.novelUrl.Hostname()]
+
+	// 书名
+	bookName = dom.Find(info.BookNameSelector).First().Text()
+	log.Println("开始下载：", bookName)
 
 	for {
 		// 把当前页包含的章节存起来
@@ -40,10 +43,9 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 					// 获取a标签文本，也就是标题内容，有些网站采用gbk编码，这里编码格式统一调整为utf8
 					if bts, err := GbkToUtf8([]byte(selection.Text())); err == nil {
 						// 把获取到的信息append到r里面
-						r = append(r, Chapter{
-							UrlStr:                n.novelUrl.ResolveReference(pathUrl).String(),
-							Title:                 string(bts),
-							ChapterTitleInContent: info.ChapterTitleInContent,
+						chapters = append(chapters, Chapter{
+							UrlStr: n.novelUrl.ResolveReference(pathUrl).String(),
+							Title:  string(bts),
 						})
 					}
 				}
@@ -62,7 +64,7 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 			}
 			//log.Println("下一页链接：", nextUrl)
 			if err != nil {
-				return nil, err
+				return bookName, chapters, err
 			}
 			fullUri := n.novelUrl.ResolveReference(nextUrl).String()
 
@@ -71,15 +73,15 @@ func (n *NewBiQuGeCrawler) FetchChapterList() ([]Chapter, error) {
 			}
 			dom, err = CreateGoQuery(fullUri)
 			if err != nil {
-				return nil, err
+				return bookName, chapters, err
 			}
 		}
 
 	}
-	if len(r) == 0 {
-		return nil, errors.New("empty chapter list")
+	if len(chapters) == 0 {
+		return bookName, chapters, errors.New("empty chapter list")
 	}
-	return r, nil
+	return bookName, chapters, nil
 }
 
 // 章节内容
@@ -141,6 +143,10 @@ func (n *NewBiQuGeCrawler) FetchChapterContent(c *Chapter) error {
 	for k, v := range info.StrReplace {
 		c.Content = strings.Replace(c.Content, k, v, -1)
 	}
+
+	// 内容替换掉标题，如果有
+	c.Content = strings.Replace(c.Content, c.Title, "", -1)
+
 	if len(c.Content) == 0 {
 		return errors.New("empty content of chapter: " + c.Title)
 	}

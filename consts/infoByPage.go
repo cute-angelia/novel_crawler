@@ -12,16 +12,14 @@ type NewSiteGeInfoStruct struct {
 	ChapterListNextSelector string
 	ContentNextSelector     string
 
-	// Chapter 标题在内容中，这样就不需要重复写个章节标题进去，默认 false
-	ChapterTitleInContent bool
-	ChapterListRange      []int
-
 	// 章节列表下一页a标签应包含的文本，章节内容下一页a标签应包含的文本
 	ChapterListNextStr string
 	ContentNextStr     string
 
-	ASelector       string
-	ContentSelector string
+	// 选择器
+	BookNameSelector string // 书名
+	ASelector        string // 章节列表
+	ContentSelector  string // 文本内容
 
 	// 关于字符串替换，有几点要注意：
 	// 1. 代码文件的编码格式为utf-8，小说文件的编码格式也应该为utf-8，这样才能保证替换的结果是正确的
@@ -42,13 +40,10 @@ var NewSiteInfoConfigMap = map[string]NewSiteGeInfoStruct{
 
 		// 目录：下一页
 		ChapterListNextSelector: "a.index-container-btn:last-child",
-		ChapterListRange:        []int{0, 0}, // 1-20
 		// 内容：下一页
 		ContentNextSelector: "#next_url",
 
-		// 有标题在内容中
-		ChapterTitleInContent: true,
-
+		BookNameSelector: ".top > h1",
 		// 目录：列表链接
 		ASelector: "div.section-box:nth-child(4) > ul.section-list.fix > li > a",
 		// 内容文本
@@ -68,6 +63,7 @@ var NewSiteInfoConfigMap = map[string]NewSiteGeInfoStruct{
 			" </p>":  "",
 			"</p>":   "",
 			"(本章完)":  "",
+			"&nbsp;": "",
 		},
 		// 内容移除
 		RemoveSelector: []string{"a", "div"},

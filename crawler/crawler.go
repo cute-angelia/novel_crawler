@@ -23,21 +23,15 @@ import (
 
 // Chapter 爬取流程相同的共用同一个实现类
 type Chapter struct {
-	Number                int
-	UrlStr                string
-	Title                 string
-	Content               string
-	ChapterTitleInContent bool
+	Number  int
+	UrlStr  string
+	Title   string
+	Content string
 }
 
 func (c *Chapter) Save(f *os.File) error {
-	if c.ChapterTitleInContent {
-		_, err := f.WriteString(fmt.Sprintf("%s\n", c.Content))
-		return err
-	} else {
-		_, err := f.WriteString(fmt.Sprintf("%s\n%s\n", c.Title, c.Content))
-		return err
-	}
+	_, err := f.WriteString(fmt.Sprintf("%s\n%s\n", c.Title, c.Content))
+	return err
 }
 
 // ExtractRange 从切片中提取指定范围的元素，自动处理超出边界情况
@@ -82,7 +76,7 @@ type NextGetter interface {
 
 type CrawlerInterface interface {
 	// FetchChapterList 获取章节列表
-	FetchChapterList() ([]Chapter, error)
+	FetchChapterList() (string, []Chapter, error)
 	// FetchChapterContent 获取某一章节内容
 	FetchChapterContent(c *Chapter) error
 	// GetUrl 获取url
@@ -131,12 +125,13 @@ func CreateCrawler(novelUrlStr string) (CrawlerInterface, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := consts.BiQuGeInfoByHost[novelUrl.Hostname()]; ok {
-		return &BiQuGeCrawler{
-			novelUrl: novelUrl,
-			filter:   &chapterFilterCommon{},
-		}, nil
-	}
+
+	//if _, ok := consts.BiQuGeInfoByHost[novelUrl.Hostname()]; ok {
+	//	return &BiQuGeCrawler{
+	//		novelUrl: novelUrl,
+	//		filter:   &chapterFilterCommon{},
+	//	}, nil
+	//}
 
 	if _, ok := consts.NewSiteInfoConfigMap[novelUrl.Hostname()]; ok {
 		return &NewBiQuGeCrawler{
